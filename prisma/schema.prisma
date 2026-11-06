@@ -1,0 +1,300 @@
+// Sorteo Diario — modelo de datos
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  SPONSOR
+  ADMIN
+}
+
+enum RaffleType {
+  REGULAR
+  SPECIAL
+  PREMIUM
+}
+
+enum RaffleStatus {
+  PENDING // esperando aprobación del admin
+  APPROVED // aprobado: programado o activo según fechas
+  REJECTED
+  CLOSED // cerrado y sorteado
+  CANCELLED
+}
+
+enum DeliveryType {
+  DIGITAL // cupón / código / bono
+  SHIPPING // el patrocinador lo envía
+  IN_PERSON // se disfruta en un lugar (ciudad)
+}
+
+enum ActionType {
+  VIDEO // ver vídeo X segundos
+  VISIT // visitar web / landing
+  FOLLOW // seguir en redes (declarado)
+  FORM // dejar datos (lead) con consentimiento
+  COUPON // revelar un cupón descuento
+}
+
+enum BannerPosition {
+  LEFT
+  RIGHT
+  FOOTER
+}
+
+enum DeliveryStatus {
+  PENDING_CLAIM // avisado, esperando que el ganador acepte
+  CLAIMED // aceptado, pendiente de entrega
+  DELIVERED
+  EXPIRED // no reclamado -> pasa a suplente
+}
+
+model User {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  passwordHash    String
+  name            String
+  role            Role      @default(USER)
+  phone           String?
+  phoneVerified   Boolean   @default(false)
+  phoneCode       String?
+  province        String?
+  birthDate       DateTime?
+  profileComplete Boolean   @default(false)
+  referralCode    String    @unique
+  referredById    String?
+  referredBy      User?     @relation("Referrals", fields: [referredById], references: [id])
+  referrals       User[]    @relation("Referrals")
+  lastLoginDay    String? // YYYY-MM-DD (Europe/Madrid)
+  streak          Int       @default(0)
+  registerIp      String?
+  deviceId        String?
+  banned          Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+
+  sponsor       Sponsor?
+  sessions      Session[]
+  tickets       Ticket[]
+  completions   ActionCompletion[]
+  wildcards     WildcardEntry[]
+  leads         Lead[]
+  notifications Notification[]
+  loginEvents   LoginEvent[]
+  deliveries    PrizeDelivery[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model LoginEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ip        String?
+  deviceId  String?
+  createdAt DateTime @default(now())
+
+  @@index([ip])
+  @@index([deviceId])
+}
+
+model Sponsor {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyName String
+  website     String?
+  logoEmoji   String   @default("🏷️")
+  description String?
+  createdAt   DateTime @default(now())
+  raffles     Raffle[]
+}
+
+model Raffle {
+  id             String       @id @default(cuid())
+  sponsorId      String
+  sponsor        Sponsor      @relation(fields: [sponsorId], references: [id], onDelete: Cascade)
+  title          String
+  description    String
+  prizeValue     Decimal      @db.Decimal(10, 2)
+  imageUrl       String?
+  emoji          String       @default("🎁")
+  category       String       @default("Otros")
+  type           RaffleType   @default(REGULAR)
+  status         RaffleStatus @default(PENDING)
+  deliveryType   DeliveryType @default(DIGITAL)
+  city           String?
+  startAt        DateTime
+  endAt          DateTime
+  maxTotalTickets Int? // si se agota, cierra antes
+  ticketCount    Int          @default(0) // última papeleta emitida (numeración 1..N)
+  // Sorteo verificable
+  secretSeed     String // se revela al cerrar
+  seedHash       String // sha256(secretSeed), público desde el inicio
+  rejectReason   String?
+  createdAt      DateTime     @default(now())
+
+  actions     RaffleAction[]
+  tickets     Ticket[]
+  draw        Draw?
+  deliveries  PrizeDelivery[]
+
+  @@index([status, startAt, endAt])
+}
+
+model RaffleAction {
+  id        String     @id @default(cuid())
+  raffleId  String
+  raffle    Raffle     @relation(fields: [raffleId], references: [id], onDelete: Cascade)
+  isUnlock  Boolean    @default(false) // acción principal "Desbloquear"
+  type      ActionType
+  label     String
+  url       String?
+  seconds   Int        @default(0) // vídeo: segundos mínimos | visita: espera
+  couponCode String?
+  formQuestion String?
+  order     Int        @default(0)
+
+  completions ActionCompletion[]
+  leads       Lead[]
+}
+
+model ActionCompletion {
+  id          String       @id @default(cuid())
+  actionId    String
+  action      RaffleAction @relation(fields: [actionId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startedAt   DateTime     @default(now())
+  completedAt DateTime?
+
+  @@unique([actionId, userId])
+}
+
+model Ticket {
+  id        String   @id @default(cuid())
+  raffleId  String
+  raffle    Raffle   @relation(fields: [raffleId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  number    Int
+  source    String // UNLOCK | ACTION | WILDCARD
+  createdAt DateTime @default(now())
+
+  @@unique([raffleId, number])
+  @@index([raffleId, userId])
+}
+
+model WildcardEntry {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount    Int // + gana, - gasta
+  reason    String // WELCOME, PROFILE, DAILY_LOGIN, STREAK_7, REFERRAL, AD_VIDEO, SHARE, SPEND, ADMIN
+  dayKey    String // YYYY-MM-DD Europe/Madrid
+  refId     String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, dayKey])
+}
+
+model Lead {
+  id        String       @id @default(cuid())
+  actionId  String
+  action    RaffleAction @relation(fields: [actionId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  email     String
+  phone     String?
+  answer    String?
+  consent   Boolean
+  createdAt DateTime     @default(now())
+}
+
+model Draw {
+  id                String   @id @default(cuid())
+  raffleId          String   @unique
+  raffle            Raffle   @relation(fields: [raffleId], references: [id], onDelete: Cascade)
+  totalTickets      Int
+  drandRound        Int?
+  drandRandomness   String?
+  randomnessSource  String // "drand" | "mock"
+  winnerNumbers     Int[] // [ganador, suplente1, suplente2]
+  winnerUserIds     String[]
+  counters          Int[] // contador HMAC usado para cada número
+  createdAt         DateTime @default(now())
+}
+
+model PrizeDelivery {
+  id        String         @id @default(cuid())
+  raffleId  String
+  raffle    Raffle         @relation(fields: [raffleId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rank      Int // 0 ganador, 1 suplente 1, 2 suplente 2
+  status    DeliveryStatus @default(PENDING_CLAIM)
+  claimDeadline DateTime
+  shippingAddress String?
+  notes     String?
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  link      String?
+  read      Boolean  @default(false)
+  emailed   Boolean  @default(false) // email simulado en pruebas
+  createdAt DateTime @default(now())
+
+  @@index([userId, read])
+}
+
+model AdBanner {
+  id          String         @id @default(cuid())
+  advertiser  String
+  title       String
+  text        String?
+  imageUrl    String?
+  emoji       String         @default("📣")
+  color       String         @default("#6d28d9")
+  linkUrl     String
+  videoUrl    String? // si tiene vídeo, sirve para la tarea "ver anuncio" (+comodín)
+  videoSeconds Int           @default(15)
+  position    BannerPosition
+  active      Boolean        @default(true)
+  impressions Int            @default(0)
+  clicks      Int            @default(0)
+  createdAt   DateTime       @default(now())
+}
+
+model AdView {
+  id        String   @id @default(cuid())
+  bannerId  String
+  userId    String
+  startedAt DateTime @default(now())
+  completedAt DateTime?
+  dayKey    String
+}
+
+model Setting {
+  key   String @id
+  value Json
+}
