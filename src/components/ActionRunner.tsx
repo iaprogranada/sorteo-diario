@@ -19,7 +19,7 @@ export interface RunnerAction {
 
 const ICON = { VIDEO: "▶️", VISIT: "🌐", FOLLOW: "➕", FORM: "📝", COUPON: "🏷️" };
 
-export function ActionRunner({ action, sponsorName, disabled }: { action: RunnerAction; sponsorName: string; disabled?: boolean }) {
+export function ActionRunner({ action, sponsorName, capReached }: { action: RunnerAction; sponsorName: string; capReached?: boolean }) {
   const router = useRouter();
   const [phase, setPhase] = useState<"idle" | "running" | "done">(action.done ? "done" : "idle");
   const [remaining, setRemaining] = useState(0);
@@ -85,7 +85,7 @@ export function ActionRunner({ action, sponsorName, disabled }: { action: Runner
       {phase === "idle" && (
         <button
           onClick={begin}
-          disabled={pending || disabled}
+          disabled={pending}
           className={action.isUnlock ? "btn-primary w-full py-3 text-base" : "btn-ghost w-full justify-between"}
           data-testid={action.isUnlock ? "unlock-button" : `action-${action.id}`}
         >
@@ -93,7 +93,7 @@ export function ActionRunner({ action, sponsorName, disabled }: { action: Runner
             {action.isUnlock ? "🔓 Desbloquear: " : `${ICON[action.type]} `}
             {action.label}
           </span>
-          {!action.isUnlock && <span className="badge bg-amber-100 text-amber-900">+1 🎟️</span>}
+          {!action.isUnlock && (capReached ? <span className="badge bg-violet-100 text-violet-600">Máx. papeletas</span> : <span className="badge bg-amber-100 text-amber-900">+1 🎟️</span>)}
         </button>
       )}
 

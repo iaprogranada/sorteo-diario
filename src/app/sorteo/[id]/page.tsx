@@ -193,7 +193,7 @@ export default async function RafflePage({ params }: { params: Promise<{ id: str
                           {raffle.actions
                             .filter((a) => !a.isUnlock)
                             .map((a) => (
-                              <ActionRunner key={a.id} action={toRunner(a)} sponsorName={raffle.sponsor.companyName} disabled={remainingCap === 0} />
+                              <ActionRunner key={a.id} action={toRunner(a)} sponsorName={raffle.sponsor.companyName} capReached={remainingCap === 0} />
                             ))}
                         </div>
                       )}
