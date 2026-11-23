@@ -7,6 +7,11 @@ Plataforma de sorteos **gratuitos** diarios patrocinados por marcas y negocios. 
 - Ingresos extra con banners en los laterales y el faldón.
 - Sorteo **verificable**: huella SHA-256 publicada al inicio + aleatoriedad pública de [drand](https://drand.love) al cierre.
 
+## Documentación
+
+- [Plan de producto, análisis legal y decisiones](docs/plan-producto.md)
+- [Capturas de pantalla](docs/capturas/)
+
 ## Reglas configurables (Admin → Ajustes)
 
 | Concepto | Valor por defecto |
